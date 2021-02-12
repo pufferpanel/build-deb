@@ -1,0 +1,63 @@
+name: 'build-deb'
+description: 'Creates a DEB based on a given folder structure'
+inputs:
+  data-folder:  # id of input
+    description: 'Folder to zip as "data.tar.gz", matching the structure it should be on disk'
+    required: true
+    default: '.'
+  package:
+    description: 'Name of package'
+    required: true
+  version:
+    required: true
+    description: 'Version'
+  license:
+    required: true
+    description: 'License'
+  architecture:
+    required: true
+    description: 'Architecture'
+    default: 'amd64'
+  maintainer:
+    required: true
+    description: 'Maintainer'
+  homepage:
+    required: true
+    description: 'Home page'
+  description:
+    required: true
+    description: 'Description'
+  before-install:
+    required: false
+    description: 'Script to run before installation'
+  after-install:
+    required: false
+    description: 'Script to run after installation'
+  before-upgrade:
+    required: false
+    description: 'Script to run before upgrade'
+  after-upgrade:
+    required: false
+    description: 'Script to run after upgrade'
+  before-remove:
+    required: false
+    description: 'Script to run before removal'
+  after-remove:
+    required: false
+    description: 'Script to run after removal'
+  after-purge:
+    required: false
+    description: 'Script to run after purge'
+  user:
+    required: false
+    description: 'User to install files as'
+  group:
+    required: false
+    description: 'Group to install files as'
+
+outputs:
+  file:
+    description: 'Resulting file'
+runs:
+  using: 'node12'
+  main: 'dist/index.js'
