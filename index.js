@@ -95,7 +95,7 @@ Description: ${description}
         fs.writeFileSync(path.join(debianDir, 'postrm'), scriptFile, {mode: '0775'});
 
         //we have to change file owners so it works okay
-        await exec.exec('/bin/sh', ['-c', 'sudo chown -R root:root ' + dataFolder], {cwd: dataFolder});
+        await exec.exec('/bin/sh', ['-c', 'sudo chown -R root:root .'], {cwd: dataFolder});
 
         const resultFile = path.join(dataFolder, '..', `${packageName}_${version}_${architecture}.deb`);
         //now we can build the package
@@ -103,7 +103,7 @@ Description: ${description}
         core.setOutput('file', resultFile);
 
         //reset perms to be what our user is
-        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} ${dataFolder}`], {cwd: dataFolder});
+        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} .`], {cwd: dataFolder});
 
         //remove our DEBIAN dir
         //await exec.exec('/bin/sh', ['-c', 'sudo rm -rf ' + debianDir], {cwd: dataFolder});
