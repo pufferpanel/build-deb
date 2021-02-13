@@ -29,7 +29,7 @@ async function main() {
 
         //there can be an annoying issue where perms aren't right... just reset now
         const username = os.userInfo().username;
-        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} ${dataFolder}`], {cwd: dataFolder});
+        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} .`], {cwd: dataFolder});
 
         const allFiles = getFiles(dataFolder);
 
