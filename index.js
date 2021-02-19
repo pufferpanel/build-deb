@@ -99,14 +99,14 @@ Description: ${description}
 
         const resultFile = path.join(dataFolder, '..', `${packageName}_${version}_${architecture}.deb`);
         //now we can build the package
-        await exec.exec('/bin/sh', ['-c', `dpkg -b . ${resultFile}`], {cwd: dataFolder});
+        await exec.exec('/bin/sh', ['-c', `sudo dpkg -b . ${resultFile}`], {cwd: dataFolder});
         core.setOutput('file', resultFile);
 
         //reset perms to be what our user is
         await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} .`], {cwd: dataFolder});
 
         //remove our DEBIAN dir
-        //await exec.exec('/bin/sh', ['-c', 'sudo rm -rf ' + debianDir], {cwd: dataFolder});
+        await exec.exec('/bin/sh', ['-c', 'sudo rm -rf ' + debianDir], {cwd: dataFolder});
     } catch (error) {
         core.setFailed(error.message);
     }
