@@ -67,9 +67,6 @@ async function main() {
             if (file.startsWith('/DEBIAN')) {
                 continue;
             }
-
-            console.log(` Writing md5sum for ${file}`);
-
             const buf = fs.readFileSync(path.join(dataFolder, file.slice(1)));
             const hash = crypto.createHash('md5').update(buf).digest("hex");
 
