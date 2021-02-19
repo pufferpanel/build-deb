@@ -97,7 +97,7 @@ Description: ${description}
         //we have to change file owners so it works okay
         await exec.exec('/bin/sh', ['-c', 'sudo chown -R root:root .'], {cwd: dataFolder});
 
-        const resultFile = path.join(dataFolder, '..', `${packageName}_${version}_${architecture}.deb`);
+        const resultFile = path.resolve(dataFolder, '..', `${packageName}_${version}_${architecture}.deb`);
         //now we can build the package
         await exec.exec('/bin/sh', ['-c', `sudo dpkg -b . ${resultFile}`], {cwd: dataFolder});
         core.setOutput('file', resultFile);
