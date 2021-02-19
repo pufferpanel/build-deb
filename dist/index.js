@@ -36,25 +36,30 @@ async function main() {
 
         //there can be an annoying issue where perms aren't right... just reset now
         const username = os.userInfo().username;
-        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} .`], {cwd: dataFolder});
+        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} ${dataFolder}`]);
 
         const allFiles = getFiles(dataFolder);
 
         //create supplement files for handling the debian aspect
         const debianDir = path.join(dataFolder, "DEBIAN")
         if (fs.existsSync(debianDir)) {
+            console.log(`Cleaning up ${debianDir}`);
             fs.rmdirSync(debianDir, {recursive: true});
         }
+        console.log(`Creating ${debianDir}`);
         fs.mkdirSync(debianDir);
 
         //there's several files we need
 
         //first, we'll do the conffiles. This is a list of files in the /etc folder that we flag as "configs"
         const etcFiles = getFiles(dataFolder, 'etc');
-        fs.writeFileSync(path.join(debianDir, "conffiles"), etcFiles.join('\n') + '\n');
+        const conffiles = path.join(debianDir, "conffiles");
+        console.log(`Creating ${conffiles}`);
+        fs.writeFileSync(conffiles, etcFiles.join('\n') + '\n');
 
         //generate our md5 file
         const md5sumFile = path.join(debianDir, 'md5sums');
+        console.log(`Creating ${md5sumFile}`)
         fs.writeFileSync(md5sumFile, '');
         for(const i in allFiles) {
             const file = allFiles[i];
@@ -63,6 +68,8 @@ async function main() {
                 continue;
             }
 
+            console.log(` Writing md5sum for ${file}`);
+
             const buf = fs.readFileSync(path.join(dataFolder, file.slice(1)));
             const hash = crypto.createHash('md5').update(buf).digest("hex");
 
@@ -70,7 +77,9 @@ async function main() {
         }
 
         //generate the control file
-        fs.writeFileSync(path.join(debianDir, 'control'), `Package: ${packageName}
+        const controlFile = path.join(debianDir, 'control');
+        console.log(`Creating ${controlFile}`);
+        fs.writeFileSync(controlFile, `Package: ${packageName}
 Version: ${version}
 License: ${license}
 Vendor: pufferpanel-debbuilder
@@ -88,32 +97,40 @@ Description: ${description}
         let scriptFile = '';
         scriptFile = replaceIn(PREINST, 'before-upgrade', beforeUpgrade);
         scriptFile = replaceIn(scriptFile, 'before-install', beforeInstall);
-        fs.writeFileSync(path.join(debianDir, 'preinst'), scriptFile, {mode: '0775'});
+        const preinstFile = path.join(debianDir, 'preinst');
+        console.log(`Creating ${preinstFile}`);
+        fs.writeFileSync(preinstFile, scriptFile, {mode: '0775'});
 
         scriptFile = replaceIn(PRERM, 'before-remove', beforeRemove);
-        fs.writeFileSync(path.join(debianDir, 'prerm'), scriptFile, {mode: '0775'});
+        const prermFile = path.join(debianDir, 'prerm');
+        console.log(`Creating ${prermFile}`);
+        fs.writeFileSync(prermFile, scriptFile, {mode: '0775'});
 
         scriptFile = replaceIn(POSTINST, 'after-upgrade', afterUpgrade);
         scriptFile = replaceIn(scriptFile, 'after-install', afterInstall);
-        fs.writeFileSync(path.join(debianDir, 'postinst'), scriptFile, {mode: '0775'});
+        const postinitFile = path.join(debianDir, 'postinst');
+        console.log(`Creating ${postinitFile}`);
+        fs.writeFileSync(postinitFile, scriptFile, {mode: '0775'});
 
         scriptFile = replaceIn(POSTRM, 'after-remove', afterRemove);
         scriptFile = replaceIn(scriptFile, 'after-purge', afterPurge);
-        fs.writeFileSync(path.join(debianDir, 'postrm'), scriptFile, {mode: '0775'});
+        const postrmFile = path.join(debianDir, 'postrm');
+        console.log(`Creating ${postrmFile}`);
+        fs.writeFileSync(postrmFile, scriptFile, {mode: '0775'});
 
         //we have to change file owners so it works okay
-        await exec.exec('/bin/sh', ['-c', 'sudo chown -R root:root .'], {cwd: dataFolder});
+        await exec.exec('/bin/sh', ['-c', `sudo chown -R root:root ${dataFolder}`]);
 
         const resultFile = path.resolve(dataFolder, '..', `${packageName}_${version}_${architecture}.deb`);
         //now we can build the package
-        await exec.exec('/bin/sh', ['-c', `sudo dpkg -b . ${resultFile}`], {cwd: dataFolder});
+        await exec.exec('/bin/sh', ['-c', `sudo dpkg -b ${dataFolder} ${resultFile}`]);
         core.setOutput('file', resultFile);
 
         //reset perms to be what our user is
-        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} .`], {cwd: dataFolder});
+        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} ${dataFolder}`]);
 
         //remove our DEBIAN dir
-        await exec.exec('/bin/sh', ['-c', 'sudo rm -rf ' + debianDir], {cwd: dataFolder});
+        await exec.exec('/bin/sh', ['-c', `sudo rm -rf ${debianDir}`]);
     } catch (error) {
         core.setFailed(error.message);
     }
