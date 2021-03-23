@@ -182,11 +182,11 @@ then
     before_install
 elif [ "\${1}" = "upgrade" -a -n "\${2}" ]
 then
-    upgradeFromVersion="${2}"
+    upgradeFromVersion="\${2}"
     before_upgrade "\${upgradeFromVersion}"
 elif [ "\${1}" = "install" -a -n "\${2}" ]
 then
-    upgradeFromVersion="${2}"
+    upgradeFromVersion="\${2}"
     before_upgrade "\${upgradeFromVersion}"
 elif echo "\${1}" | grep -E -q '(fail|abort)'
 then
