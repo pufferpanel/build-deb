@@ -26,6 +26,7 @@ async function main() {
         const afterPurge = core.getInput('after-purge');
         const group = core.getInput('group');
         const user = core.getInput('user');
+        const suggestedPackages = getSuggestedPackages();
 
         //there can be an annoying issue where perms aren't right... just reset now
         const username = os.userInfo().username;
@@ -80,6 +81,7 @@ Section: default
 Priority: extra
 Homepage: ${homepage}
 Description: ${description}
+${suggestedPackages}
 `);
 
         //generate the scripts
@@ -164,6 +166,25 @@ function replaceIn(data, key, file) {
     }
 
     return data.replace(`{${key}}`, fileContents);
+}
+
+/**
+ *
+ * @return {String}
+ */
+function getSuggestedPackages() {
+    const packages = core.getInput('suggested-packages').split(/\r?\n/).reduce(
+        (acc, line) =>
+            acc
+                .concat(line.split(','))
+                .map(p => p.trim()),
+        []
+    );
+
+    if (packages.length > 0) {
+        return 'Suggests: ' + packages.join(', ');
+    }
+    return '';
 }
 
 const PREINST = `#!/bin/sh
