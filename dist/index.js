@@ -1,311 +1,7 @@
-module.exports =
 /******/ (() => { // webpackBootstrap
 /******/ 	var __webpack_modules__ = ({
 
-/***/ 5117:
-/***/ ((__unused_webpack_module, __unused_webpack_exports, __nccwpck_require__) => {
-
-const core = __nccwpck_require__(5190);
-const github = __nccwpck_require__(5316);
-const exec = __nccwpck_require__(7940);
-const io = __nccwpck_require__(2504);
-const path = __nccwpck_require__(5622);
-const fs = __nccwpck_require__(5747);
-const crypto = __nccwpck_require__(6417);
-const os = __nccwpck_require__(2087);
-
-async function main() {
-    try {
-        const dataFolder = core.getInput('data-folder');
-        const packageName = core.getInput('package');
-        const version = core.getInput('version');
-        const license = core.getInput('license');
-        const architecture = core.getInput('architecture');
-        const maintainer = core.getInput('maintainer');
-        const homepage = core.getInput('homepage');
-        const description = core.getInput('description');
-        const beforeInstall = core.getInput('before-install');
-        const afterInstall = core.getInput('after-install');
-        const beforeUpgrade = core.getInput('before-upgrade');
-        const afterUpgrade = core.getInput('after-upgrade');
-        const beforeRemove = core.getInput('before-remove');
-        const afterRemove = core.getInput('after-remove');
-        const afterPurge = core.getInput('after-purge');
-        const group = core.getInput('group');
-        const user = core.getInput('user');
-        const suggestedPackages = getSuggestedPackages();
-
-        //there can be an annoying issue where perms aren't right... just reset now
-        const username = os.userInfo().username;
-        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} ${dataFolder}`]);
-
-        const allFiles = getFiles(dataFolder);
-
-        //create supplement files for handling the debian aspect
-        const debianDir = path.join(dataFolder, "DEBIAN")
-        if (fs.existsSync(debianDir)) {
-            console.log(`Cleaning up ${debianDir}`);
-            fs.rmdirSync(debianDir, {recursive: true});
-        }
-        console.log(`Creating ${debianDir}`);
-        fs.mkdirSync(debianDir);
-
-        //there's several files we need
-
-        //first, we'll do the conffiles. This is a list of files in the /etc folder that we flag as "configs"
-        const etcFiles = getFiles(dataFolder, 'etc');
-        const conffiles = path.join(debianDir, "conffiles");
-        console.log(`Creating ${conffiles}`);
-        fs.writeFileSync(conffiles, etcFiles.join('\n') + '\n');
-
-        //generate our md5 file
-        const md5sumFile = path.join(debianDir, 'md5sums');
-        console.log(`Creating ${md5sumFile}`)
-        fs.writeFileSync(md5sumFile, '');
-        for(const i in allFiles) {
-            const file = allFiles[i];
-
-            if (file.startsWith('/DEBIAN')) {
-                continue;
-            }
-            const buf = fs.readFileSync(path.join(dataFolder, file.slice(1)));
-            const hash = crypto.createHash('md5').update(buf).digest("hex");
-
-            fs.appendFileSync(md5sumFile, hash + ' ' + file.slice(1) + '\n');
-        }
-
-        //generate the control file
-        const controlFile = path.join(debianDir, 'control');
-        console.log(`Creating ${controlFile}`);
-        fs.writeFileSync(controlFile, `Package: ${packageName}
-Version: ${version}
-License: ${license}
-Vendor: pufferpanel-debbuilder
-Architecture: ${architecture}
-Maintainer: ${maintainer}
-Installed-Size: 0
-Section: default
-Priority: extra
-Homepage: ${homepage}
-Description: ${description}
-${suggestedPackages}
-`);
-
-        //generate the scripts
-        //at this point, assume there is a script, because the template can handle "empty" values
-        let scriptFile = '';
-        scriptFile = replaceIn(PREINST, 'before-upgrade', beforeUpgrade);
-        scriptFile = replaceIn(scriptFile, 'before-install', beforeInstall);
-        const preinstFile = path.join(debianDir, 'preinst');
-        console.log(`Creating ${preinstFile}`);
-        fs.writeFileSync(preinstFile, scriptFile, {mode: '0775'});
-
-        scriptFile = replaceIn(PRERM, 'before-remove', beforeRemove);
-        const prermFile = path.join(debianDir, 'prerm');
-        console.log(`Creating ${prermFile}`);
-        fs.writeFileSync(prermFile, scriptFile, {mode: '0775'});
-
-        scriptFile = replaceIn(POSTINST, 'after-upgrade', afterUpgrade);
-        scriptFile = replaceIn(scriptFile, 'after-install', afterInstall);
-        const postinitFile = path.join(debianDir, 'postinst');
-        console.log(`Creating ${postinitFile}`);
-        fs.writeFileSync(postinitFile, scriptFile, {mode: '0775'});
-
-        scriptFile = replaceIn(POSTRM, 'after-remove', afterRemove);
-        scriptFile = replaceIn(scriptFile, 'after-purge', afterPurge);
-        const postrmFile = path.join(debianDir, 'postrm');
-        console.log(`Creating ${postrmFile}`);
-        fs.writeFileSync(postrmFile, scriptFile, {mode: '0775'});
-
-        //we have to change file owners so it works okay
-        await exec.exec('/bin/sh', ['-c', `sudo chown -R root:root ${dataFolder}`]);
-
-        const resultFile = path.resolve(dataFolder, '..', `${packageName}_${version}_${architecture}.deb`);
-        //now we can build the package
-        await exec.exec('/bin/sh', ['-c', `sudo dpkg -b ${dataFolder} ${resultFile}`]);
-        core.setOutput('file', resultFile);
-
-        //reset perms to be what our user is
-        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} ${dataFolder}`]);
-
-        //remove our DEBIAN dir
-        await exec.exec('/bin/sh', ['-c', `sudo rm -rf ${debianDir}`]);
-    } catch (error) {
-        core.setFailed(error.message);
-    }
-}
-
-/**
- *
- * @param root {String}
- * @param item {String}
- * @return {[]}
- */
-function getFiles(root, item = '') {
-    const result = [];
-
-    fs.readdirSync(path.join(root, item), {withFileTypes: true}).forEach(file => {
-        const itemPath = path.join(root, item, file.name).slice(root.length);
-
-        if (file.isDirectory()) {
-            const sub = getFiles(root, path.join(item, file.name));
-            for(const i in sub) {
-                result.push(sub[i]);
-            }
-        } else {
-            result.push(itemPath);
-        }
-    });
-    return result;
-}
-
-/**
- *
- * @param data {String}
- * @param key {String}
- * @param file {String}
- * @return {String}
- */
-function replaceIn(data, key, file) {
-    let fileContents = '';
-    if (file && file !== '' && fs.existsSync(file)) {
-        fileContents = fs.readFileSync(file).toString();
-    }
-
-    return data.replace(`{${key}}`, fileContents);
-}
-
-/**
- *
- * @return {String}
- */
-function getSuggestedPackages() {
-    const packages = core.getInput('suggested-packages').split(/\r?\n/).reduce(
-        (acc, line) =>
-            acc
-                .concat(line.split(','))
-                .map(p => p.trim()),
-        []
-    );
-
-    if (packages.length > 0) {
-        return 'Suggests: ' + packages.join(', ');
-    }
-    return '';
-}
-
-const PREINST = `#!/bin/sh
-before_upgrade() {
-    :
-{before-upgrade}
-}
-
-before_install() {
-    :
-{before-install}
-}
-
-if [ "\${1}" = "install" -a -z "\${2}" ]
-then
-    before_install
-elif [ "\${1}" = "upgrade" -a -n "\${2}" ]
-then
-    upgradeFromVersion="\${2}"
-    before_upgrade "\${upgradeFromVersion}"
-elif [ "\${1}" = "install" -a -n "\${2}" ]
-then
-    upgradeFromVersion="\${2}"
-    before_upgrade "\${upgradeFromVersion}"
-elif echo "\${1}" | grep -E -q '(fail|abort)'
-then
-    echo "Failed to install before the pre-installation script was run." >&2
-    exit 1
-fi`;
-
-const PRERM = `#!/bin/sh
-before_remove() {
-    :
-{before-remove}
-}
-
-dummy() {
-    :
-}
-
-if [ "\${1}" = "remove" -a -z "\${2}" ]
-then
-    # "before remove" goes here
-    before_remove
-elif [ "\${1}" = "upgrade" ]
-then
-    dummy
-elif echo "\${1}" | grep -E -q "(fail|abort)"
-then
-    echo "Failed to install before the pre-removal script was run." >&2
-    exit 1
-fi`;
-
-const POSTINST = `#!/bin/sh
-after_upgrade() {
-    :
-{after-upgrade}
-}
-
-after_install() {
-    :
-{after-install}
-}
-
-if [ "\${1}" = "configure" -a -z "\${2}" ] || \\
-   [ "\${1}" = "abort-remove" ]
-then
-    after_install
-elif [ "\${1}" = "configure" -a -n "\${2}" ]
-then
-    upgradeFromVersion="\${2}"
-    after_upgrade "\${2}"
-elif echo "\${1}" | grep -E -q "(abort|fail)"
-then
-    echo "Failed to install before the post-installation script was run." >&2
-    exit 1
-fi`;
-
-const POSTRM = `#!/bin/sh
-after_remove() {
-    :
-{after-remove}
-}
-
-after_purge() {
-    :
-{after-purge}
-}
-
-dummy() {
-    :
-}
-
-if [ "\${1}" = "remove" -o "\${1}" = "abort-install" ]
-then
-    after_remove
-elif [ "\${1}" = "purge" -a -z "\${2}" ]
-then
-    after_purge
-elif [ "\${1}" = "upgrade" ]
-then
-    dummy
-elif echo "\${1}" | grep -E -q '(fail|abort)'
-then
-    echo "Failed to install before the post-removal script was run." >&2
-    exit 1
-fi`;
-
-main();
-
-
-/***/ }),
-
-/***/ 5671:
+/***/ 2914:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -318,8 +14,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const os = __importStar(__nccwpck_require__(2087));
-const utils_1 = __nccwpck_require__(9985);
+const os = __importStar(__nccwpck_require__(857));
+const utils_1 = __nccwpck_require__(4142);
 /**
  * Commands
  *
@@ -391,7 +87,7 @@ function escapeProperty(s) {
 
 /***/ }),
 
-/***/ 5190:
+/***/ 2124:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -413,11 +109,11 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const command_1 = __nccwpck_require__(5671);
-const file_command_1 = __nccwpck_require__(5268);
-const utils_1 = __nccwpck_require__(9985);
-const os = __importStar(__nccwpck_require__(2087));
-const path = __importStar(__nccwpck_require__(5622));
+const command_1 = __nccwpck_require__(2914);
+const file_command_1 = __nccwpck_require__(9697);
+const utils_1 = __nccwpck_require__(4142);
+const os = __importStar(__nccwpck_require__(857));
+const path = __importStar(__nccwpck_require__(6928));
 /**
  * The code to exit an action
  */
@@ -636,7 +332,7 @@ exports.getState = getState;
 
 /***/ }),
 
-/***/ 5268:
+/***/ 9697:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -652,9 +348,9 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 // We use any as a valid input type
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const fs = __importStar(__nccwpck_require__(5747));
-const os = __importStar(__nccwpck_require__(2087));
-const utils_1 = __nccwpck_require__(9985);
+const fs = __importStar(__nccwpck_require__(9896));
+const os = __importStar(__nccwpck_require__(857));
+const utils_1 = __nccwpck_require__(4142);
 function issueCommand(command, message) {
     const filePath = process.env[`GITHUB_${command}`];
     if (!filePath) {
@@ -672,7 +368,7 @@ exports.issueCommand = issueCommand;
 
 /***/ }),
 
-/***/ 9985:
+/***/ 4142:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -698,7 +394,7 @@ exports.toCommandValue = toCommandValue;
 
 /***/ }),
 
-/***/ 7940:
+/***/ 9876:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -720,7 +416,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const tr = __importStar(__nccwpck_require__(702));
+const tr = __importStar(__nccwpck_require__(5017));
 /**
  * Exec a command.
  * Output will be streamed to the live console.
@@ -749,7 +445,7 @@ exports.exec = exec;
 
 /***/ }),
 
-/***/ 702:
+/***/ 5017:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -771,12 +467,12 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const os = __importStar(__nccwpck_require__(2087));
-const events = __importStar(__nccwpck_require__(8614));
-const child = __importStar(__nccwpck_require__(3129));
-const path = __importStar(__nccwpck_require__(5622));
-const io = __importStar(__nccwpck_require__(2504));
-const ioUtil = __importStar(__nccwpck_require__(5160));
+const os = __importStar(__nccwpck_require__(857));
+const events = __importStar(__nccwpck_require__(4434));
+const child = __importStar(__nccwpck_require__(5317));
+const path = __importStar(__nccwpck_require__(6928));
+const io = __importStar(__nccwpck_require__(8770));
+const ioUtil = __importStar(__nccwpck_require__(9047));
 /* eslint-disable @typescript-eslint/unbound-method */
 const IS_WINDOWS = process.platform === 'win32';
 /*
@@ -1356,15 +1052,15 @@ class ExecState extends events.EventEmitter {
 
 /***/ }),
 
-/***/ 1089:
+/***/ 672:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Context = void 0;
-const fs_1 = __nccwpck_require__(5747);
-const os_1 = __nccwpck_require__(2087);
+const fs_1 = __nccwpck_require__(9896);
+const os_1 = __nccwpck_require__(857);
 class Context {
     /**
      * Hydrate the context from the environment
@@ -1413,7 +1109,7 @@ exports.Context = Context;
 
 /***/ }),
 
-/***/ 5316:
+/***/ 7484:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -1439,8 +1135,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getOctokit = exports.context = void 0;
-const Context = __importStar(__nccwpck_require__(1089));
-const utils_1 = __nccwpck_require__(4965);
+const Context = __importStar(__nccwpck_require__(672));
+const utils_1 = __nccwpck_require__(6006);
 exports.context = new Context.Context();
 /**
  * Returns a hydrated octokit ready to use for GitHub Actions
@@ -1456,7 +1152,7 @@ exports.getOctokit = getOctokit;
 
 /***/ }),
 
-/***/ 4595:
+/***/ 2100:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -1482,7 +1178,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getApiBaseUrl = exports.getProxyAgent = exports.getAuthString = void 0;
-const httpClient = __importStar(__nccwpck_require__(2320));
+const httpClient = __importStar(__nccwpck_require__(6448));
 function getAuthString(token, options) {
     if (!token && !options.auth) {
         throw new Error('Parameter token or opts.auth is required');
@@ -1506,7 +1202,7 @@ exports.getApiBaseUrl = getApiBaseUrl;
 
 /***/ }),
 
-/***/ 4965:
+/***/ 6006:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -1532,12 +1228,12 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getOctokitOptions = exports.GitHub = exports.context = void 0;
-const Context = __importStar(__nccwpck_require__(1089));
-const Utils = __importStar(__nccwpck_require__(4595));
+const Context = __importStar(__nccwpck_require__(672));
+const Utils = __importStar(__nccwpck_require__(2100));
 // octokit + plugins
-const core_1 = __nccwpck_require__(5227);
-const plugin_rest_endpoint_methods_1 = __nccwpck_require__(4403);
-const plugin_paginate_rest_1 = __nccwpck_require__(6829);
+const core_1 = __nccwpck_require__(8745);
+const plugin_rest_endpoint_methods_1 = __nccwpck_require__(215);
+const plugin_paginate_rest_1 = __nccwpck_require__(7090);
 exports.context = new Context.Context();
 const baseUrl = Utils.getApiBaseUrl();
 const defaults = {
@@ -1567,15 +1263,15 @@ exports.getOctokitOptions = getOctokitOptions;
 
 /***/ }),
 
-/***/ 2320:
+/***/ 6448:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const http = __nccwpck_require__(8605);
-const https = __nccwpck_require__(7211);
-const pm = __nccwpck_require__(165);
+const http = __nccwpck_require__(8611);
+const https = __nccwpck_require__(5692);
+const pm = __nccwpck_require__(8528);
 let tunnel;
 var HttpCodes;
 (function (HttpCodes) {
@@ -1994,7 +1690,7 @@ class HttpClient {
         if (useProxy) {
             // If using proxy, need tunnel
             if (!tunnel) {
-                tunnel = __nccwpck_require__(7517);
+                tunnel = __nccwpck_require__(4706);
             }
             const agentOptions = {
                 maxSockets: maxSockets,
@@ -2110,7 +1806,7 @@ exports.HttpClient = HttpClient;
 
 /***/ }),
 
-/***/ 165:
+/***/ 8528:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -2175,7 +1871,7 @@ exports.checkBypass = checkBypass;
 
 /***/ }),
 
-/***/ 5160:
+/***/ 9047:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -2191,9 +1887,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 var _a;
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const assert_1 = __nccwpck_require__(2357);
-const fs = __nccwpck_require__(5747);
-const path = __nccwpck_require__(5622);
+const assert_1 = __nccwpck_require__(2613);
+const fs = __nccwpck_require__(9896);
+const path = __nccwpck_require__(6928);
 _a = fs.promises, exports.chmod = _a.chmod, exports.copyFile = _a.copyFile, exports.lstat = _a.lstat, exports.mkdir = _a.mkdir, exports.readdir = _a.readdir, exports.readlink = _a.readlink, exports.rename = _a.rename, exports.rmdir = _a.rmdir, exports.stat = _a.stat, exports.symlink = _a.symlink, exports.unlink = _a.unlink;
 exports.IS_WINDOWS = process.platform === 'win32';
 function exists(fsPath) {
@@ -2377,7 +2073,7 @@ function isUnixExecutable(stats) {
 
 /***/ }),
 
-/***/ 2504:
+/***/ 8770:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -2392,10 +2088,10 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const childProcess = __nccwpck_require__(3129);
-const path = __nccwpck_require__(5622);
-const util_1 = __nccwpck_require__(1669);
-const ioUtil = __nccwpck_require__(5160);
+const childProcess = __nccwpck_require__(5317);
+const path = __nccwpck_require__(6928);
+const util_1 = __nccwpck_require__(9023);
+const ioUtil = __nccwpck_require__(9047);
 const exec = util_1.promisify(childProcess.exec);
 /**
  * Copies a file or folder.
@@ -2674,7 +2370,7 @@ function copyFile(srcFile, destFile, force) {
 
 /***/ }),
 
-/***/ 7217:
+/***/ 4872:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -2731,7 +2427,7 @@ exports.createTokenAuth = createTokenAuth;
 
 /***/ }),
 
-/***/ 5227:
+/***/ 8745:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -2739,11 +2435,11 @@ exports.createTokenAuth = createTokenAuth;
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 
-var universalUserAgent = __nccwpck_require__(5665);
-var beforeAfterHook = __nccwpck_require__(8527);
-var request = __nccwpck_require__(4745);
-var graphql = __nccwpck_require__(2654);
-var authToken = __nccwpck_require__(7217);
+var universalUserAgent = __nccwpck_require__(6387);
+var beforeAfterHook = __nccwpck_require__(6572);
+var request = __nccwpck_require__(8239);
+var graphql = __nccwpck_require__(1991);
+var authToken = __nccwpck_require__(4872);
 
 function _objectWithoutPropertiesLoose(source, excluded) {
   if (source == null) return {};
@@ -2913,7 +2609,7 @@ exports.Octokit = Octokit;
 
 /***/ }),
 
-/***/ 9718:
+/***/ 8743:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -2921,8 +2617,8 @@ exports.Octokit = Octokit;
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 
-var isPlainObject = __nccwpck_require__(4482);
-var universalUserAgent = __nccwpck_require__(5665);
+var isPlainObject = __nccwpck_require__(9599);
+var universalUserAgent = __nccwpck_require__(6387);
 
 function lowercaseKeys(object) {
   if (!object) {
@@ -3311,7 +3007,7 @@ exports.endpoint = endpoint;
 
 /***/ }),
 
-/***/ 2654:
+/***/ 1991:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -3319,8 +3015,8 @@ exports.endpoint = endpoint;
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 
-var request = __nccwpck_require__(4745);
-var universalUserAgent = __nccwpck_require__(5665);
+var request = __nccwpck_require__(8239);
+var universalUserAgent = __nccwpck_require__(6387);
 
 const VERSION = "4.6.0";
 
@@ -3427,7 +3123,7 @@ exports.withCustomRequest = withCustomRequest;
 
 /***/ }),
 
-/***/ 6829:
+/***/ 7090:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -3567,7 +3263,7 @@ exports.paginateRest = paginateRest;
 
 /***/ }),
 
-/***/ 4403:
+/***/ 215:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -4721,7 +4417,7 @@ exports.restEndpointMethods = restEndpointMethods;
 
 /***/ }),
 
-/***/ 7428:
+/***/ 2700:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -4731,8 +4427,8 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 
 function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
 
-var deprecation = __nccwpck_require__(3162);
-var once = _interopDefault(__nccwpck_require__(6118));
+var deprecation = __nccwpck_require__(9526);
+var once = _interopDefault(__nccwpck_require__(1288));
 
 const logOnce = once(deprecation => console.warn(deprecation));
 /**
@@ -4784,7 +4480,7 @@ exports.RequestError = RequestError;
 
 /***/ }),
 
-/***/ 4745:
+/***/ 8239:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -4794,11 +4490,11 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 
 function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
 
-var endpoint = __nccwpck_require__(9718);
-var universalUserAgent = __nccwpck_require__(5665);
-var isPlainObject = __nccwpck_require__(4482);
-var nodeFetch = _interopDefault(__nccwpck_require__(1416));
-var requestError = __nccwpck_require__(7428);
+var endpoint = __nccwpck_require__(8743);
+var universalUserAgent = __nccwpck_require__(6387);
+var isPlainObject = __nccwpck_require__(9599);
+var nodeFetch = _interopDefault(__nccwpck_require__(9953));
+var requestError = __nccwpck_require__(2700);
 
 const VERSION = "5.4.14";
 
@@ -4940,12 +4636,12 @@ exports.request = request;
 
 /***/ }),
 
-/***/ 8527:
+/***/ 6572:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var register = __nccwpck_require__(8994)
-var addHook = __nccwpck_require__(4615)
-var removeHook = __nccwpck_require__(1058)
+var register = __nccwpck_require__(2359)
+var addHook = __nccwpck_require__(27)
+var removeHook = __nccwpck_require__(8286)
 
 // bind with array of arguments: https://stackoverflow.com/a/21792913
 var bind = Function.bind
@@ -5004,7 +4700,7 @@ module.exports.Collection = Hook.Collection
 
 /***/ }),
 
-/***/ 4615:
+/***/ 27:
 /***/ ((module) => {
 
 module.exports = addHook;
@@ -5057,7 +4753,7 @@ function addHook(state, kind, name, hook) {
 
 /***/ }),
 
-/***/ 8994:
+/***/ 2359:
 /***/ ((module) => {
 
 module.exports = register;
@@ -5091,7 +4787,7 @@ function register(state, name, method, options) {
 
 /***/ }),
 
-/***/ 1058:
+/***/ 8286:
 /***/ ((module) => {
 
 module.exports = removeHook;
@@ -5117,7 +4813,7 @@ function removeHook(state, name, method) {
 
 /***/ }),
 
-/***/ 3162:
+/***/ 9526:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -5145,7 +4841,7 @@ exports.Deprecation = Deprecation;
 
 /***/ }),
 
-/***/ 4482:
+/***/ 9599:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -5191,7 +4887,7 @@ exports.isPlainObject = isPlainObject;
 
 /***/ }),
 
-/***/ 1416:
+/***/ 9953:
 /***/ ((module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -5201,11 +4897,11 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 
 function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
 
-var Stream = _interopDefault(__nccwpck_require__(2413));
-var http = _interopDefault(__nccwpck_require__(8605));
-var Url = _interopDefault(__nccwpck_require__(8835));
-var https = _interopDefault(__nccwpck_require__(7211));
-var zlib = _interopDefault(__nccwpck_require__(8761));
+var Stream = _interopDefault(__nccwpck_require__(2203));
+var http = _interopDefault(__nccwpck_require__(8611));
+var Url = _interopDefault(__nccwpck_require__(7016));
+var https = _interopDefault(__nccwpck_require__(5692));
+var zlib = _interopDefault(__nccwpck_require__(3106));
 
 // Based on https://github.com/tmpvar/jsdom/blob/aa85b2abf07766ff7bf5c1f6daafb3726f2f2db5/lib/jsdom/living/blob.js
 
@@ -5356,7 +5052,7 @@ FetchError.prototype.name = 'FetchError';
 
 let convert;
 try {
-	convert = __nccwpck_require__(3783).convert;
+	convert = (__nccwpck_require__(2076).convert);
 } catch (e) {}
 
 const INTERNALS = Symbol('Body internals');
@@ -6839,7 +6535,7 @@ fetch.Promise = global.Promise;
 
 module.exports = exports = fetch;
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.default = exports;
+exports["default"] = exports;
 exports.Headers = Headers;
 exports.Request = Request;
 exports.Response = Response;
@@ -6848,10 +6544,10 @@ exports.FetchError = FetchError;
 
 /***/ }),
 
-/***/ 6118:
+/***/ 1288:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var wrappy = __nccwpck_require__(8273)
+var wrappy = __nccwpck_require__(1928)
 module.exports = wrappy(once)
 module.exports.strict = wrappy(onceStrict)
 
@@ -6897,27 +6593,27 @@ function onceStrict (fn) {
 
 /***/ }),
 
-/***/ 7517:
+/***/ 4706:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-module.exports = __nccwpck_require__(7509);
+module.exports = __nccwpck_require__(8842);
 
 
 /***/ }),
 
-/***/ 7509:
+/***/ 8842:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
 
-var net = __nccwpck_require__(1631);
-var tls = __nccwpck_require__(4016);
-var http = __nccwpck_require__(8605);
-var https = __nccwpck_require__(7211);
-var events = __nccwpck_require__(8614);
-var assert = __nccwpck_require__(2357);
-var util = __nccwpck_require__(1669);
+var net = __nccwpck_require__(9278);
+var tls = __nccwpck_require__(4756);
+var http = __nccwpck_require__(8611);
+var https = __nccwpck_require__(5692);
+var events = __nccwpck_require__(4434);
+var assert = __nccwpck_require__(2613);
+var util = __nccwpck_require__(9023);
 
 
 exports.httpOverHttp = httpOverHttp;
@@ -7177,7 +6873,7 @@ exports.debug = debug; // for test
 
 /***/ }),
 
-/***/ 5665:
+/***/ 6387:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -7203,7 +6899,7 @@ exports.getUserAgent = getUserAgent;
 
 /***/ }),
 
-/***/ 8273:
+/***/ 1928:
 /***/ ((module) => {
 
 // Returns a wrapper function that returns a wrapped callback
@@ -7243,7 +6939,7 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
-/***/ 3783:
+/***/ 2076:
 /***/ ((module) => {
 
 module.exports = eval("require")("encoding");
@@ -7251,123 +6947,123 @@ module.exports = eval("require")("encoding");
 
 /***/ }),
 
-/***/ 2357:
+/***/ 2613:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("assert");;
+module.exports = require("assert");
 
 /***/ }),
 
-/***/ 3129:
+/***/ 5317:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("child_process");;
+module.exports = require("child_process");
 
 /***/ }),
 
-/***/ 6417:
+/***/ 6982:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("crypto");;
+module.exports = require("crypto");
 
 /***/ }),
 
-/***/ 8614:
+/***/ 4434:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("events");;
+module.exports = require("events");
 
 /***/ }),
 
-/***/ 5747:
+/***/ 9896:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("fs");;
+module.exports = require("fs");
 
 /***/ }),
 
-/***/ 8605:
+/***/ 8611:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("http");;
+module.exports = require("http");
 
 /***/ }),
 
-/***/ 7211:
+/***/ 5692:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("https");;
+module.exports = require("https");
 
 /***/ }),
 
-/***/ 1631:
+/***/ 9278:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("net");;
+module.exports = require("net");
 
 /***/ }),
 
-/***/ 2087:
+/***/ 857:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("os");;
+module.exports = require("os");
 
 /***/ }),
 
-/***/ 5622:
+/***/ 6928:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("path");;
+module.exports = require("path");
 
 /***/ }),
 
-/***/ 2413:
+/***/ 2203:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("stream");;
+module.exports = require("stream");
 
 /***/ }),
 
-/***/ 4016:
+/***/ 4756:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("tls");;
+module.exports = require("tls");
 
 /***/ }),
 
-/***/ 8835:
+/***/ 7016:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("url");;
+module.exports = require("url");
 
 /***/ }),
 
-/***/ 1669:
+/***/ 9023:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("util");;
+module.exports = require("util");
 
 /***/ }),
 
-/***/ 8761:
+/***/ 3106:
 /***/ ((module) => {
 
 "use strict";
-module.exports = require("zlib");;
+module.exports = require("zlib");
 
 /***/ })
 
@@ -7379,8 +7075,9 @@ module.exports = require("zlib");;
 /******/ 	// The require function
 /******/ 	function __nccwpck_require__(moduleId) {
 /******/ 		// Check if module is in cache
-/******/ 		if(__webpack_module_cache__[moduleId]) {
-/******/ 			return __webpack_module_cache__[moduleId].exports;
+/******/ 		var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 		if (cachedModule !== undefined) {
+/******/ 			return cachedModule.exports;
 /******/ 		}
 /******/ 		// Create a new module (and put it into the cache)
 /******/ 		var module = __webpack_module_cache__[moduleId] = {
@@ -7405,10 +7102,306 @@ module.exports = require("zlib");;
 /************************************************************************/
 /******/ 	/* webpack/runtime/compat */
 /******/ 	
-/******/ 	__nccwpck_require__.ab = __dirname + "/";/************************************************************************/
-/******/ 	// module exports must be returned from runtime so entry inlining is disabled
-/******/ 	// startup
-/******/ 	// Load entry module and return exports
-/******/ 	return __nccwpck_require__(5117);
+/******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
+/******/ 	
+/************************************************************************/
+var __webpack_exports__ = {};
+const core = __nccwpck_require__(2124);
+const github = __nccwpck_require__(7484);
+const exec = __nccwpck_require__(9876);
+const io = __nccwpck_require__(8770);
+const path = __nccwpck_require__(6928);
+const fs = __nccwpck_require__(9896);
+const crypto = __nccwpck_require__(6982);
+const os = __nccwpck_require__(857);
+
+async function main() {
+    try {
+        const dataFolder = core.getInput('data-folder');
+        const packageName = core.getInput('package');
+        const version = core.getInput('version');
+        const license = core.getInput('license');
+        const architecture = core.getInput('architecture');
+        const maintainer = core.getInput('maintainer');
+        const homepage = core.getInput('homepage');
+        const description = core.getInput('description');
+        const beforeInstall = core.getInput('before-install');
+        const afterInstall = core.getInput('after-install');
+        const beforeUpgrade = core.getInput('before-upgrade');
+        const afterUpgrade = core.getInput('after-upgrade');
+        const beforeRemove = core.getInput('before-remove');
+        const afterRemove = core.getInput('after-remove');
+        const afterPurge = core.getInput('after-purge');
+        const group = core.getInput('group');
+        const user = core.getInput('user');
+        const suggestedPackages = getSuggestedPackages();
+
+        //there can be an annoying issue where perms aren't right... just reset now
+        const username = os.userInfo().username;
+        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} ${dataFolder}`]);
+
+        const allFiles = getFiles(dataFolder);
+
+        //create supplement files for handling the debian aspect
+        const debianDir = path.join(dataFolder, "DEBIAN")
+        if (fs.existsSync(debianDir)) {
+            console.log(`Cleaning up ${debianDir}`);
+            fs.rmdirSync(debianDir, {recursive: true});
+        }
+        console.log(`Creating ${debianDir}`);
+        fs.mkdirSync(debianDir);
+
+        //there's several files we need
+
+        //first, we'll do the conffiles. This is a list of files in the /etc folder that we flag as "configs"
+        const etcFiles = getFiles(dataFolder, 'etc');
+        const conffiles = path.join(debianDir, "conffiles");
+        console.log(`Creating ${conffiles}`);
+        fs.writeFileSync(conffiles, etcFiles.join('\n') + '\n');
+
+        //generate our md5 file
+        const md5sumFile = path.join(debianDir, 'md5sums');
+        console.log(`Creating ${md5sumFile}`)
+        fs.writeFileSync(md5sumFile, '');
+        for(const i in allFiles) {
+            const file = allFiles[i];
+
+            if (file.startsWith('/DEBIAN')) {
+                continue;
+            }
+            const buf = fs.readFileSync(path.join(dataFolder, file.slice(1)));
+            const hash = crypto.createHash('md5').update(buf).digest("hex");
+
+            fs.appendFileSync(md5sumFile, hash + ' ' + file.slice(1) + '\n');
+        }
+
+        //generate the control file
+        const controlFile = path.join(debianDir, 'control');
+        console.log(`Creating ${controlFile}`);
+        fs.writeFileSync(controlFile, `Package: ${packageName}
+Version: ${version}
+License: ${license}
+Vendor: pufferpanel-debbuilder
+Architecture: ${architecture}
+Maintainer: ${maintainer}
+Installed-Size: 0
+Section: default
+Priority: extra
+Homepage: ${homepage}
+Description: ${description}
+`);
+
+        //generate the scripts
+        //at this point, assume there is a script, because the template can handle "empty" values
+        let scriptFile = '';
+        scriptFile = replaceIn(PREINST, 'before-upgrade', beforeUpgrade);
+        scriptFile = replaceIn(scriptFile, 'before-install', beforeInstall);
+        const preinstFile = path.join(debianDir, 'preinst');
+        console.log(`Creating ${preinstFile}`);
+        fs.writeFileSync(preinstFile, scriptFile, {mode: '0775'});
+
+        scriptFile = replaceIn(PRERM, 'before-remove', beforeRemove);
+        const prermFile = path.join(debianDir, 'prerm');
+        console.log(`Creating ${prermFile}`);
+        fs.writeFileSync(prermFile, scriptFile, {mode: '0775'});
+
+        scriptFile = replaceIn(POSTINST, 'after-upgrade', afterUpgrade);
+        scriptFile = replaceIn(scriptFile, 'after-install', afterInstall);
+        const postinitFile = path.join(debianDir, 'postinst');
+        console.log(`Creating ${postinitFile}`);
+        fs.writeFileSync(postinitFile, scriptFile, {mode: '0775'});
+
+        scriptFile = replaceIn(POSTRM, 'after-remove', afterRemove);
+        scriptFile = replaceIn(scriptFile, 'after-purge', afterPurge);
+        const postrmFile = path.join(debianDir, 'postrm');
+        console.log(`Creating ${postrmFile}`);
+        fs.writeFileSync(postrmFile, scriptFile, {mode: '0775'});
+
+        //we have to change file owners so it works okay
+        await exec.exec('/bin/sh', ['-c', `sudo chown -R root:root ${dataFolder}`]);
+
+        const resultFile = path.resolve(dataFolder, '..', `${packageName}_${version}_${architecture}.deb`);
+        //now we can build the package
+        await exec.exec('/bin/sh', ['-c', `sudo dpkg -b ${dataFolder} ${resultFile}`]);
+        core.setOutput('file', resultFile);
+
+        //reset perms to be what our user is
+        await exec.exec('/bin/sh', ['-c', `sudo chown -R ${username}:${username} ${dataFolder}`]);
+
+        //remove our DEBIAN dir
+        await exec.exec('/bin/sh', ['-c', `sudo rm -rf ${debianDir}`]);
+    } catch (error) {
+        core.setFailed(error.message);
+    }
+}
+
+/**
+ *
+ * @param root {String}
+ * @param item {String}
+ * @return {[]}
+ */
+function getFiles(root, item = '') {
+    const result = [];
+
+    fs.readdirSync(path.join(root, item), {withFileTypes: true}).forEach(file => {
+        const itemPath = path.join(root, item, file.name).slice(root.length);
+
+        if (file.isDirectory()) {
+            const sub = getFiles(root, path.join(item, file.name));
+            for(const i in sub) {
+                result.push(sub[i]);
+            }
+        } else {
+            result.push(itemPath);
+        }
+    });
+    return result;
+}
+
+/**
+ *
+ * @param data {String}
+ * @param key {String}
+ * @param file {String}
+ * @return {String}
+ */
+function replaceIn(data, key, file) {
+    let fileContents = '';
+    if (file && file !== '' && fs.existsSync(file)) {
+        fileContents = fs.readFileSync(file).toString();
+    }
+
+    return data.replace(`{${key}}`, fileContents);
+}
+
+/**
+ *
+ * @return {String}
+ */
+function getSuggestedPackages() {
+    const packages = core.getInput('suggested-packages').split(/\r?\n/).reduce(
+        (acc, line) =>
+            acc
+                .concat(line.split(','))
+                .map(p => p.trim()),
+        []
+    );
+
+    if (packages.length > 0) {
+        return 'Suggests: ' + packages.join(', ');
+    }
+    return '';
+}
+
+const PREINST = `#!/bin/sh
+before_upgrade() {
+    :
+{before-upgrade}
+}
+
+before_install() {
+    :
+{before-install}
+}
+
+if [ "\${1}" = "install" -a -z "\${2}" ]
+then
+    before_install
+elif [ "\${1}" = "upgrade" -a -n "\${2}" ]
+then
+    upgradeFromVersion="\${2}"
+    before_upgrade "\${upgradeFromVersion}"
+elif [ "\${1}" = "install" -a -n "\${2}" ]
+then
+    upgradeFromVersion="\${2}"
+    before_upgrade "\${upgradeFromVersion}"
+elif echo "\${1}" | grep -E -q '(fail|abort)'
+then
+    echo "Failed to install before the pre-installation script was run." >&2
+    exit 1
+fi`;
+
+const PRERM = `#!/bin/sh
+before_remove() {
+    :
+{before-remove}
+}
+
+dummy() {
+    :
+}
+
+if [ "\${1}" = "remove" -a -z "\${2}" ]
+then
+    # "before remove" goes here
+    before_remove
+elif [ "\${1}" = "upgrade" ]
+then
+    dummy
+elif echo "\${1}" | grep -E -q "(fail|abort)"
+then
+    echo "Failed to install before the pre-removal script was run." >&2
+    exit 1
+fi`;
+
+const POSTINST = `#!/bin/sh
+after_upgrade() {
+    :
+{after-upgrade}
+}
+
+after_install() {
+    :
+{after-install}
+}
+
+if [ "\${1}" = "configure" -a -z "\${2}" ] || \\
+   [ "\${1}" = "abort-remove" ]
+then
+    after_install
+elif [ "\${1}" = "configure" -a -n "\${2}" ]
+then
+    upgradeFromVersion="\${2}"
+    after_upgrade "\${2}"
+elif echo "\${1}" | grep -E -q "(abort|fail)"
+then
+    echo "Failed to install before the post-installation script was run." >&2
+    exit 1
+fi`;
+
+const POSTRM = `#!/bin/sh
+after_remove() {
+    :
+{after-remove}
+}
+
+after_purge() {
+    :
+{after-purge}
+}
+
+dummy() {
+    :
+}
+
+if [ "\${1}" = "remove" -o "\${1}" = "abort-install" ]
+then
+    after_remove
+elif [ "\${1}" = "purge" -a -z "\${2}" ]
+then
+    after_purge
+elif [ "\${1}" = "upgrade" ]
+then
+    dummy
+elif echo "\${1}" | grep -E -q '(fail|abort)'
+then
+    echo "Failed to install before the post-removal script was run." >&2
+    exit 1
+fi`;
+
+main();
+
+module.exports = __webpack_exports__;
 /******/ })()
 ;

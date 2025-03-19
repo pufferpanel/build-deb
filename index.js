@@ -81,7 +81,6 @@ Section: default
 Priority: extra
 Homepage: ${homepage}
 Description: ${description}
-${suggestedPackages}
 `);
 
         //generate the scripts
