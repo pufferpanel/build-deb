@@ -1,18 +1,18 @@
 {
   "name": "build-deb",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "description": "Builds DEB files for Github Actions",
+  "main": "dist/index.js",
   "keywords": [],
   "author": "",
   "license": "Apache v2",
+  "scripts": {
+    "build": "ncc build"
+  },
   "dependencies": {
-    "@actions/core": "^1.2.6",
-    "@actions/exec": "^1.0.4",
-    "@actions/github": "^4.0.0",
-    "@actions/io": "^1.0.2"
+    "@actions/core": "^1.11.1",
+    "@actions/exec": "^1.1.1",
+    "@actions/github": "^6.0.0",
+    "@actions/io": "^1.1.3"
   }
 }
