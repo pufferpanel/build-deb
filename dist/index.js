@@ -27635,7 +27635,7 @@ Section: default
 Priority: extra
 Homepage: ${homepage}
 Description: ${description}
-${suggestedPackages}`);
+`);
 
         //generate the scripts
         //at this point, assume there is a script, because the template can handle "empty" values
