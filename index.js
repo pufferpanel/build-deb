@@ -1,7 +1,5 @@
 const core = require('@actions/core');
-const github = require('@actions/github');
 const exec = require('@actions/exec');
-const io = require('@actions/io');
 const path = require("path");
 const fs = require("fs");
 const crypto = require('crypto');
@@ -24,9 +22,8 @@ async function main() {
         const beforeRemove = core.getInput('before-remove');
         const afterRemove = core.getInput('after-remove');
         const afterPurge = core.getInput('after-purge');
-        const group = core.getInput('group');
-        const user = core.getInput('user');
         const suggestedPackages = getSuggestedPackages();
+        const extraDpkgArgs = core.getInput('extra-dpkg-args');
 
         //there can be an annoying issue where perms aren't right... just reset now
         const username = os.userInfo().username;
@@ -81,7 +78,7 @@ Section: default
 Priority: extra
 Homepage: ${homepage}
 Description: ${description}
-`);
+${suggestedPackages}`);
 
         //generate the scripts
         //at this point, assume there is a script, because the template can handle "empty" values
@@ -114,7 +111,7 @@ Description: ${description}
 
         const resultFile = path.resolve(dataFolder, '..', `${packageName}_${version}_${architecture}.deb`);
         //now we can build the package
-        await exec.exec('/bin/sh', ['-c', `sudo dpkg -b ${dataFolder} ${resultFile}`]);
+        await exec.exec('/bin/sh', ['-c', `sudo dpkg ${extraDpkgArgs} -b ${dataFolder} ${resultFile}`]);
         core.setOutput('file', resultFile);
 
         //reset perms to be what our user is
@@ -181,7 +178,7 @@ function getSuggestedPackages() {
     );
 
     if (packages.length > 0) {
-        return 'Suggests: ' + packages.join(', ');
+        return 'Suggests: ' + packages.join(', ') + '\n';
     }
     return '';
 }

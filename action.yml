@@ -48,15 +48,12 @@ inputs:
   after-purge:
     required: false
     description: 'Script to run after purge'
-  user:
-    required: false
-    description: 'User to install files as'
-  group:
-    required: false
-    description: 'Group to install files as'
   suggested-packages:
     required: false
     description: 'Other packages to be suggested by the package manager'
+  extra-dpkg-args:
+    required: false
+    description: 'Extra arguments to pass to dpkg when building the deb file'
 
 outputs:
   file:
