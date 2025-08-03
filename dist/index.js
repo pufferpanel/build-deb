@@ -27668,7 +27668,7 @@ ${suggestedPackages}`);
 
         const resultFile = path.resolve(dataFolder, '..', `${packageName}_${version}_${architecture}.deb`);
         //now we can build the package
-        await exec.exec('/bin/sh', ['-c', `sudo dpkg ${extraDpkgArgs} -b ${dataFolder} ${resultFile}`]);
+        await exec.exec('/bin/sh', ['-c', `sudo dpkg-deb ${extraDpkgArgs} -b ${dataFolder} ${resultFile}`]);
         core.setOutput('file', resultFile);
 
         //reset perms to be what our user is
